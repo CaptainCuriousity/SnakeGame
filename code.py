@@ -11,7 +11,7 @@ DOWN = 3
 LEFT = 4
 
 FPS = 60
-SPEED = 3
+SPEED = 4
 SIZE = 500
 
 
@@ -62,24 +62,31 @@ class Snake(Board):
         self.tail = []
         self.tail_length = 2
 
-        self.did_motion_after_direction_change = True
+        self.did_motion = True
+
+    def free_cells_count(self):
+        result = self.width * self.height
+        for row in self.field:
+            result -= row.count(1)
+        result -= self.tail_length + 1
+        return result
 
     def catch_key_press(self, key):
-        if not self.did_motion_after_direction_change:
+        if not self.did_motion:
             return
 
         if key == pygame.K_a and self.direction != RIGHT:
             self.direction = LEFT
-            self.did_motion_after_direction_change = False
+            self.did_motion = False
         elif key == pygame.K_w and self.direction != DOWN:
             self.direction = UP
-            self.did_motion_after_direction_change = False
+            self.did_motion = False
         elif key == pygame.K_d and self.direction != LEFT:
             self.direction = RIGHT
-            self.did_motion_after_direction_change = False
+            self.did_motion = False
         elif key == pygame.K_s and self.direction != UP:
             self.direction = DOWN
-            self.did_motion_after_direction_change = False
+            self.did_motion = False
 
     def render(self):
         super().render()
@@ -97,10 +104,10 @@ class Snake(Board):
             self.top + self.snake_head[1] * self.cell_size,
             self.cell_size, self.cell_size
         )
-        pygame.draw.rect(screen, (255, 0, 255), rect, self.cell_size // 10)
+        pygame.draw.rect(screen, (255, 204, 0), rect, self.cell_size // 10)
         # фрукт
         pygame.draw.circle(
-            screen, (0, 255, 0),
+            screen, (255, 0, 255),
             (self.fruit[0] * self.cell_size + self.left + self.cell_size // 2,
              self.fruit[1] * self.cell_size + self.top + self.cell_size // 2),
             int(self.cell_size * .4)
@@ -120,15 +127,15 @@ class Snake(Board):
         elif self.direction == LEFT:
             self.snake_head = ((predX - 1) % self.width, predY)
 
-        if self.snake_head in self.tail or self.field[self.snake_head[1]][self.snake_head[0]] == 1:
+        self.tail.insert(0, (predX, predY))
+        if len(self.tail) > self.tail_length:
+            self.tail.pop()
+
+        if self.snake_head in self.tail or self.field[self.snake_head[1]][self.snake_head[0]]:
             pygame.mixer_music.load("data/gameover.mp3")
             pygame.mixer_music.play()
             self.game_over = True
             return
-
-        self.tail.insert(0, (predX, predY))
-        if len(self.tail) > self.tail_length:
-            self.tail.pop()
 
         if self.snake_head == self.fruit:
             pygame.mixer_music.load("data/omnom.mp3")
@@ -139,7 +146,7 @@ class Snake(Board):
             while self.field[self.fruit[1]][self.fruit[0]] != 0 or self.fruit in self.tail\
                     or self.fruit == self.snake_head:
                 self.fruit = randint(0, self.width - 1), randint(0, self.height - 1)
-        self.did_motion_after_direction_change = True
+        self.did_motion = True
 
 
 def load_image(name, color_key=None):
@@ -190,7 +197,7 @@ def start_screen():
 
 def draw_score(score):
     font = pygame.font.Font("data/joystix monospace.ttf", 36)
-    string = "Score:" + str(score).rjust(4, "0")
+    string = "Score:" + str(score).rjust(5, "0")
     string_rendered = font.render(string, 1, pygame.Color("white"))
     rect = string_rendered.get_rect()
     rect.top = 430
@@ -198,29 +205,31 @@ def draw_score(score):
     screen.blit(string_rendered, rect)
 
 
-def end_screen():
+def end_screen(score):
+    global best_score
+
     screen.fill((0, 0, 0))
-    font = pygame.font.Font("data/joystix monospace.ttf", 40)
-    strings = ["Игра окончена", "Нажмите Enter,", "чтобы играть", "сначала"]
+    font = pygame.font.Font("data/joystix monospace.ttf", 26)
+    strings = ["Игра окончена", "Нажмите Enter,", "чтобы играть сначала",
+               "Ваш счёт:", str(score).rjust(5, "0") + " очков",
+               "Ваш лучший результат:", str(best_score).rjust(5, "0") + " очков"]
     y_coord = 70
     for string in strings:
         string_rendered = font.render(string, 1, pygame.Color("white"))
         rect = string_rendered.get_rect()
         rect.top = y_coord
-        y_coord += 30 + rect.h
-        rect.left = 10
+        y_coord += 20 + rect.h
+        rect.left = SIZE // 2 - rect.w // 2
         screen.blit(string_rendered, rect)
-    running = True
-    while running:
+    while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                running = False
+                terminate()
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_RETURN:
-                    pass
-                    # TODO: начать игру заново
+                    return
                 elif event.key == pygame.K_ESCAPE:
-                    running = False
+                    terminate()
         pygame.display.flip()
 
 
@@ -233,41 +242,47 @@ def load_field_from_file(filename):
 
 
 def main():
-    pass
+    global best_score
 
+    field_size = 10
+    field = load_field_from_file("cage_field.txt")
 
-pygame.init()
-screen = pygame.display.set_mode((SIZE, SIZE))
-start_screen()
+    snake = Snake(field_size, field_size, field)
+    snake.set_view(50, 10, int((SIZE * .8)) // field_size)
 
-field_size = 10
-field = load_field_from_file("cage_field.txt")
+    clock = pygame.time.Clock()
 
-snake = Snake(field_size, field_size, field)
-snake.set_view(50, 10, int((SIZE * .8)) // field_size)
-
-clock = pygame.time.Clock()
-
-# Эти две переменные нужны для того, чтобы змейка двигалась, например,
-# два раза за секунду, а не 120
-time_from_prev_motion = 0
-time_needed_to_draw = 1000 // SPEED
-while not snake.game_over:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            terminate()
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
+    # Эти две переменные нужны для того, чтобы змейка двигалась, например,
+    # два раза за секунду, а не 120
+    time_from_prev_motion = 0
+    time_needed_to_draw = 1000 // SPEED
+    while not snake.game_over:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
                 terminate()
-            snake.catch_key_press(event.key)
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    terminate()
+                snake.catch_key_press(event.key)
 
-    time_from_prev_motion += clock.tick()
-    screen.fill((0, 0, 0))
-    if time_needed_to_draw < time_from_prev_motion:
-        time_from_prev_motion -= time_needed_to_draw
-        snake.update()
-    snake.render()
-    draw_score(snake.score)
-    pygame.display.flip()
+        time_from_prev_motion += clock.tick()
+        screen.fill((0, 0, 0))
+        if time_needed_to_draw < time_from_prev_motion:
+            time_from_prev_motion -= time_needed_to_draw
+            snake.update()
+        snake.render()
+        draw_score(snake.score)
+        pygame.display.flip()
 
-end_screen()
+    best_score = max(best_score, snake.score)
+    end_screen(snake.score)
+
+
+best_score = 0
+if __name__ == "__main__":
+    pygame.display.set_caption("SNAKE GAME")
+    pygame.init()
+    screen = pygame.display.set_mode((SIZE, SIZE))
+    start_screen()
+    while True:
+        main()
